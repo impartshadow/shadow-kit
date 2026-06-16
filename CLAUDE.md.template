@@ -1,0 +1,109 @@
+# Claude Code Instructions
+
+## Agent Harness (NLAH)
+
+This agent uses a modular Natural Language Agent Harness. CLAUDE.md is the loader --
+behavioral rules live in `harness/` and are enforced by `core/contracts.py`.
+
+### Module index
+
+| Module | Path | What it defines |
+|---|---|---|
+| **Runtime** | `harness/_runtime.md` | Session lifecycle, git workflow, tool routing, default-to-action |
+| **Contracts** | `harness/contracts/*.md` | Structured pre/post conditions with enforcement |
+| **Skills** | `harness/skills/*.md` | Task-specific flows (customize for your use case) |
+| **Failure taxonomy** | `harness/failure_modes/taxonomy.md` | Named failure modes with recovery paths |
+| **Code enforcement** | `core/contracts.py` | Python Contract classes -- deterministic gates |
+
+### Active contracts (code-enforced in `core/contracts.py`)
+
+| Contract | Failure mode | What it blocks |
+|---|---|---|
+| `verify-before-push` | FM-002 | Push without verification output |
+| `pre-denial-gate` | FM-001 | "I can't" without smoke test |
+| `loop-tripwire` | FM-003 | 3+ commits to same file |
+| `read-before-edit` | FM-003 | Editing without reading first |
+| `action-deferral-guard` | FM-011 | Proposing instead of executing |
+| `topic-overrun-guard` | FM-013 | Continuing after user signals closure |
+| `completion-integrity` | FM-014 | "Done" while listing gaps |
+| `git-push-target-guard` | FM-015 | Force-push to protected branches |
+| `dangerous-path-guard` | FM-017 | Writes to sensitive paths |
+
+<!-- Add your custom contracts here -->
+
+### How to read harness files
+
+Each contract file has: **Type** (enforcement mechanism), **Trigger** (when it fires),
+**Precondition** (what must be true), **Enforcement** (code or harness),
+**Recovery** (what to do on violation), **Escalation** (when to surface to user).
+
+Each skill file has: **Role sequence** (triage/execute/verify), **Stages** with
+numbered steps, **Contracts referenced**, and task-specific rules.
+
+---
+
+## Quick reference
+
+<!-- Customize these rules based on your agent's most common failure patterns.
+     The rules below are the generic defaults from Shadow Kit. Replace them
+     with your agent's actual repeated corrections. -->
+
+1. **NEVER say "I can't access X" without running the command first** -- see `harness/contracts/pre_denial_gate.md`
+2. **"Done." = verification output pasted** -- see `harness/contracts/verify_before_push.md`
+3. **Read before edit, always** -- see `harness/contracts/loop_prevention.md`
+4. **Default to action** -- execute, don't propose. See `harness/_runtime.md`
+5. **Don't continue after the user says "done"** -- see `harness/contracts/topic_overrun.md`
+
+## Session startup
+
+<!-- Customize this for your agent's startup sequence -->
+
+1. Read session handoff / state files
+2. Run `git log --oneline -15` -- check for loops
+3. Run tests -- check for failures
+4. Open with structured status report:
+   ```
+   **Status check**
+   Done last session: <bullets>
+   In progress: <what was mid-flight>
+   Up next: <confirmed next actions>
+   ```
+
+## Session end
+
+Update your session handoff file with:
+- What was completed this session
+- What is unfinished or blocked
+- What the user said to do next
+
+## Git workflow
+
+<!-- Customize: some teams use feature branches, some push to main -->
+Push directly to `main` for all changes unless explicitly asked otherwise.
+
+## Tool routing
+
+<!-- Customize: map your agent's tools here. Example: -->
+<!-- - For web fetching: use `your_browse_tool`, NOT `WebFetch` -->
+<!-- - For web search: use `your_search_tool`, NOT `WebSearch` -->
+
+## Default to action (MANDATORY)
+
+The default is execution, not proposal. Unless an action is genuinely destructive
+or irreversible, just do it. Reserve confirmation for: destructive operations,
+external side effects, or genuinely ambiguous intent.
+
+## Adding new contracts
+
+1. Create a Contract subclass in `core/contracts.py`
+2. Implement `check_pre()` and/or `check_post()`
+3. Call `register_contract(instance)` or add to `_ALL_CONTRACTS`
+4. Document in `harness/contracts/<name>.md` and `harness/failure_modes/taxonomy.md`
+5. Write a test in `tests/test_contracts.py`
+
+## Self-improvement
+
+Audit conversations for failure patterns, then generate new Contract subclasses:
+- Code enforcement is the default
+- Prose rules are a last resort
+- Name every failure mode (FM-XXX) and add to taxonomy
