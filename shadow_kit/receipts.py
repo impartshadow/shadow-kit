@@ -10,14 +10,24 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from base64 import b64decode, b64encode
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+
 from shadow_kit.contracts import ContractContext, Violation
 
 SCHEMA_VERSION = "shadow-kit.receipt.v1"
+HMAC_SHA256 = "hmac-sha256"
+ED25519 = "ed25519"
 
 PROJECT_URL = "https://github.com/impartshadow/shadow-kit"
 
@@ -70,6 +80,32 @@ def _key_bytes(signing_key: str | bytes) -> bytes:
     return signing_key.encode("utf-8")
 
 
+def generate_ed25519_keypair() -> tuple[str, str]:
+    """Return base64-encoded raw Ed25519 private and public keys."""
+
+    private_key = Ed25519PrivateKey.generate()
+    private_raw = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_raw = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return b64encode(private_raw).decode("ascii"), b64encode(public_raw).decode("ascii")
+
+
+def _ed25519_private_key(signing_key: str | bytes) -> Ed25519PrivateKey:
+    raw = b64decode(_key_bytes(signing_key), validate=True)
+    return Ed25519PrivateKey.from_private_bytes(raw)
+
+
+def _ed25519_public_key(verification_key: str | bytes) -> Ed25519PublicKey:
+    raw = b64decode(_key_bytes(verification_key), validate=True)
+    return Ed25519PublicKey.from_public_bytes(raw)
+
+
 def _unsigned(receipt: dict[str, Any]) -> dict[str, Any]:
     data = dict(receipt)
     data.pop("signature", None)
@@ -77,14 +113,20 @@ def _unsigned(receipt: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def sign_payload(payload: dict[str, Any], signing_key: str | bytes) -> str:
-    """Sign a receipt payload with HMAC-SHA256."""
+def sign_payload(
+    payload: dict[str, Any],
+    signing_key: str | bytes,
+    *,
+    algorithm: str = HMAC_SHA256,
+) -> str:
+    """Sign a receipt payload with HMAC-SHA256 or Ed25519."""
 
-    return hmac.new(
-        _key_bytes(signing_key),
-        canonical_json(payload).encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
+    body = canonical_json(payload).encode("utf-8")
+    if algorithm == HMAC_SHA256:
+        return hmac.new(_key_bytes(signing_key), body, hashlib.sha256).hexdigest()
+    if algorithm == ED25519:
+        return b64encode(_ed25519_private_key(signing_key).sign(body)).decode("ascii")
+    raise ValueError(f"unsupported signature algorithm: {algorithm}")
 
 
 def receipt_hash(receipt: dict[str, Any]) -> str:
@@ -109,6 +151,8 @@ def issue_receipt(
     previous_hash: str = "",
     timestamp: datetime | None = None,
     receipt_id: str | None = None,
+    signature_algorithm: str = HMAC_SHA256,
+    verification_key: str = "",
 ) -> dict[str, Any]:
     """Create a signed audit receipt for one governed action.
 
@@ -120,6 +164,16 @@ def issue_receipt(
     ts = timestamp or datetime.now(timezone.utc)
     if ts.tzinfo is None:
         raise ValueError("timestamp must be timezone-aware")
+    if signature_algorithm == ED25519:
+        if not verification_key:
+            private_key = _ed25519_private_key(signing_key)
+            public_raw = private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+            verification_key = b64encode(public_raw).decode("ascii")
+    elif signature_algorithm != HMAC_SHA256:
+        raise ValueError(f"unsupported signature algorithm: {signature_algorithm}")
 
     violation_records = [
         {
@@ -145,8 +199,10 @@ def issue_receipt(
         "violations": violation_records,
         "metering": metering or {},
         "previous_hash": previous_hash,
+        "signature_algorithm": signature_algorithm,
+        "verification_key": verification_key,
     }
-    signature = sign_payload(payload, signing_key)
+    signature = sign_payload(payload, signing_key, algorithm=signature_algorithm)
     signed = {**payload, "signature": signature}
     return {**signed, "receipt_hash": receipt_hash(signed)}
 
@@ -162,6 +218,8 @@ def issue_contract_receipt(
     previous_hash: str = "",
     timestamp: datetime | None = None,
     receipt_id: str | None = None,
+    signature_algorithm: str = HMAC_SHA256,
+    verification_key: str = "",
 ) -> dict[str, Any]:
     """Create a receipt directly from a contract-check result."""
 
@@ -195,12 +253,14 @@ def issue_contract_receipt(
         previous_hash=previous_hash,
         timestamp=timestamp,
         receipt_id=receipt_id,
+        signature_algorithm=signature_algorithm,
+        verification_key=verification_key,
     )
 
 
 def verify_receipt(
     receipt: dict[str, Any],
-    signing_key: str | bytes,
+    signing_key: str | bytes | None = None,
     *,
     expected_previous_hash: str | None = None,
 ) -> ReceiptVerification:
@@ -212,12 +272,30 @@ def verify_receipt(
         errors.append("schema_version mismatch")
 
     signature = receipt.get("signature")
+    algorithm = receipt.get("signature_algorithm", HMAC_SHA256)
     if not isinstance(signature, str) or not signature:
         errors.append("missing signature")
+    elif algorithm == HMAC_SHA256:
+        if signing_key is None:
+            errors.append("signing key required for HMAC receipt")
+        else:
+            expected = sign_payload(_unsigned(receipt), signing_key)
+            if not hmac.compare_digest(signature, expected):
+                errors.append("signature mismatch")
+    elif algorithm == ED25519:
+        verification_key = receipt.get("verification_key")
+        if not isinstance(verification_key, str) or not verification_key:
+            errors.append("missing verification key")
+        else:
+            try:
+                _ed25519_public_key(verification_key).verify(
+                    b64decode(signature, validate=True),
+                    canonical_json(_unsigned(receipt)).encode("utf-8"),
+                )
+            except (InvalidSignature, ValueError):
+                errors.append("signature mismatch")
     else:
-        expected = sign_payload(_unsigned(receipt), signing_key)
-        if not hmac.compare_digest(signature, expected):
-            errors.append("signature mismatch")
+        errors.append(f"unsupported signature algorithm: {algorithm}")
 
     computed_hash = receipt_hash(receipt)
     stored_hash = receipt.get("receipt_hash")
@@ -238,7 +316,7 @@ def verify_receipt(
 
 def verify_receipt_chain(
     receipts: list[dict[str, Any]],
-    signing_key: str | bytes,
+    signing_key: str | bytes | None = None,
     *,
     expected_agent_id: str | None = None,
     require_contiguous_sequence: bool = True,
@@ -345,6 +423,7 @@ def receipt_proof_card(
         f"- Action: `{receipt.get('action', '')}`",
         f"- Decision: `{receipt.get('decision', '')}`",
         f"- Policy: `{receipt.get('policy_version', '')}`",
+        f"- Signature: `{receipt.get('signature_algorithm', HMAC_SHA256)}`",
         f"- Receipt hash: `{receipt.get('receipt_hash', '')}`",
         f"- Previous hash: `{receipt.get('previous_hash', '')}`",
         f"- Verification: `{status}`",
@@ -373,6 +452,7 @@ def receipt_chain_proof_card(
         f"- Sequence range: `{verification.first_sequence}` to `{verification.last_sequence}`",
         f"- Latest decision: `{latest.get('decision', '')}`",
         f"- Latest policy: `{latest.get('policy_version', '')}`",
+        f"- Signature: `{latest.get('signature_algorithm', HMAC_SHA256)}`",
         f"- Latest hash: `{verification.receipt_hashes[-1] if verification.receipt_hashes else ''}`",
         f"- Verification: `{status}`",
     ]

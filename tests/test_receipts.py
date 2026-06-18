@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 
 from shadow_kit.contracts import ContractContext, Violation
 from shadow_kit.receipts import (
+    ED25519,
     PROJECT_URL,
+    generate_ed25519_keypair,
     issue_contract_receipt,
     issue_receipt,
     receipt_chain_proof_card,
@@ -54,6 +56,47 @@ def test_verify_receipt_detects_tampering():
     assert result.valid is False
     assert "signature mismatch" in result.errors
     assert "receipt_hash mismatch" in result.errors
+
+
+def test_ed25519_receipt_verifies_without_private_key():
+    private_key, public_key = generate_ed25519_keypair()
+    receipt = issue_receipt(
+        agent_id="agent-a",
+        sequence=1,
+        action="send_email",
+        decision="allow",
+        signing_key=private_key,
+        signature_algorithm=ED25519,
+        verification_key=public_key,
+        timestamp=TS,
+        receipt_id="r-public-1",
+    )
+
+    result = verify_receipt(receipt)
+
+    assert result.valid is True
+    assert receipt["verification_key"] == public_key
+    assert private_key not in receipt.values()
+
+
+def test_ed25519_receipt_rejects_tampering():
+    private_key, _ = generate_ed25519_keypair()
+    receipt = issue_receipt(
+        agent_id="agent-a",
+        sequence=1,
+        action="send_email",
+        decision="allow",
+        signing_key=private_key,
+        signature_algorithm=ED25519,
+        timestamp=TS,
+        receipt_id="r-public-2",
+    )
+    receipt["decision"] = "block"
+
+    result = verify_receipt(receipt)
+
+    assert result.valid is False
+    assert "signature mismatch" in result.errors
 
 
 def test_receipt_chain_previous_hash_verifies():

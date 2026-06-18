@@ -18,6 +18,7 @@ Shadow Kit is a Natural Language Agent Harness (NLAH) for building reliable AI a
 - **Runtime policy** -- session lifecycle, tool routing, and behavioral defaults
 - **Governance** -- runtime violation metrics, hot contract detection, and auto-recovery
 - **Signed receipts** -- tamper-evident audit artifacts for governed agent actions
+- **Executable proof** -- one command emits an independently verifiable, commit-ready conformance artifact
 
 ## Why this exists
 
@@ -57,6 +58,19 @@ git clone https://github.com/impartshadow/shadow-kit.git
 cd shadow-kit
 pip install -e .
 ```
+
+### Prove the contracts work
+
+```bash
+shadow-kit prove
+shadow-kit verify shadow-kit-proof.json
+```
+
+`prove` runs executable failure-mode cases, emits an Ed25519-signed receipt
+chain in `shadow-kit-proof.json`, and writes `SHADOW_KIT_PROOF.md` for committing
+to a repository or attaching to an evaluation. Verification needs only the
+public key embedded in each receipt; the private signing key never enters the
+artifact.
 
 ### 2. Copy the template
 
@@ -206,6 +220,8 @@ Receipts are the bridge from local contract checks to a governed agent control
 plane. A receipt records the governed agent id, sequence number, previous
 receipt hash, action, decision, policy version, context hash, contract
 violations, metering fields, HMAC-SHA256 signature, and signed-envelope hash.
+Local/private flows support HMAC-SHA256. Public proof bundles use Ed25519 so
+anyone can verify the artifact without receiving the signing secret.
 
 ```python
 from shadow_kit.contracts import ContractContext, check_all_pre
