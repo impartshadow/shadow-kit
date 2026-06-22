@@ -1,3 +1,7 @@
+> **▶ New here? Start at [agent-contracts](https://github.com/impartshadow/agent-contracts)** — the 30-second CI scan and the Agent Governance Index (where 27 popular frameworks rank). Shadow Kit below is the full harness behind that front door.
+
+---
+
 # Stop your AI agent from claiming it's done when it isn't
 
 **Shadow Kit is a runtime contract layer for Claude Code agents. It blocks the failures that prompts can't: the agent that says "done" without verifying, reports an action it never took (hallucinated execution), denies a capability it has, or proposes instead of executing.**
