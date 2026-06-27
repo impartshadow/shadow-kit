@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shadow Kit — the behavioral gate that runs before your agent acts</title>
+<meta name="description" content="A live, zero-install demo of pre-action governance for AI agents. Paste what your agent is about to do and watch the contract layer block the wrong action before it fires." />
+<meta property="og:title" content="Shadow Kit — pre-action governance for AI agents" />
+<meta property="og:description" content="Evaluation tells you what your agent did wrong. This tells it no before it acts. Try it live, no install." />
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14171c;
+    --panel2: #1b1f26;
+    --line: #272c34;
+    --txt: #e6e9ee;
+    --muted: #9aa4b2;
+    --accent: #5ee0a0;
+    --block: #ff6b6b;
+    --warn: #ffce5a;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 20px; }
+  header { padding: 64px 0 28px; border-bottom: 1px solid var(--line); }
+  .kick { color: var(--accent); font-family: var(--mono); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  h1 { font-size: 40px; line-height: 1.1; margin: 14px 0 10px; }
+  .lede { color: var(--muted); font-size: 19px; max-width: 680px; }
+  .lede strong { color: var(--txt); }
+  .cta-row { margin-top: 26px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 11px 18px; border-radius: 8px; font-weight: 600;
+    text-decoration: none; border: 1px solid var(--line); cursor: pointer; font-size: 15px;
+  }
+  .btn.primary { background: var(--accent); color: #06210f; border-color: var(--accent); }
+  .btn.ghost { background: transparent; color: var(--txt); }
+
+  section { padding: 40px 0; border-bottom: 1px solid var(--line); }
+  h2 { font-size: 24px; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+
+  .demo { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .examples { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip {
+    font-family: var(--mono); font-size: 12.5px; padding: 7px 11px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel2); color: var(--muted); cursor: pointer;
+  }
+  .chip:hover { color: var(--txt); border-color: var(--accent); }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
+  textarea {
+    width: 100%; min-height: 130px; resize: vertical; background: #0e1116; color: var(--txt);
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 13.5px;
+  }
+  .controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+  .controls label { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--txt); font-size: 14px; }
+  select { background: #0e1116; color: var(--txt); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 14px; }
+  .run { margin-top: 4px; }
+  .out { margin-top: 18px; }
+  .verdict { font-family: var(--mono); font-size: 14px; padding: 12px 14px; border-radius: 8px; margin-bottom: 12px; }
+  .verdict.pass { background: rgba(94,224,160,.10); border: 1px solid rgba(94,224,160,.4); color: var(--accent); }
+  .verdict.fail { background: rgba(255,107,107,.08); border: 1px solid rgba(255,107,107,.35); color: var(--block); }
+  .v { border: 1px solid var(--line); border-radius: 8px; padding: 13px 14px; margin-bottom: 10px; background: var(--panel2); }
+  .v .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tag { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 5px; font-weight: 700; letter-spacing: .04em; }
+  .tag.block { background: rgba(255,107,107,.16); color: var(--block); }
+  .tag.warn { background: rgba(255,206,90,.16); color: var(--warn); }
+  .v .name { font-family: var(--mono); font-size: 13px; color: var(--txt); }
+  .v .fm { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .v .msg { margin: 8px 0 6px; font-size: 14.5px; }
+  .v .rec { font-size: 13.5px; color: var(--muted); }
+  .v .rec b { color: var(--txt); font-weight: 600; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  pre { background: #0e1116; border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow-x: auto; font-size: 13px; }
+  code { font-family: var(--mono); }
+  footer { padding: 40px 0 70px; color: var(--muted); font-size: 14px; }
+  .built { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  @media (max-width: 640px) { h1 { font-size: 30px; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="kick">Shadow Kit · pre-action governance</div>
+    <h1>The gate that tells your agent <em>no</em> — before it acts.</h1>
+    <p class="lede">Every agent eval tool grades what the agent <strong>already did</strong>. By then the email is sent, the row is deleted, the wrong API fired. Shadow Kit is the contract layer that runs <strong>between decision and side-effect</strong> and blocks the wrong action before it happens. Below is the real enforcement engine, ported to your browser. No install — try it now.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="#playground">Try the live gate</a>
+      <a class="btn ghost" href="https://github.com/impartshadow/shadow-kit">Read the code</a>
+    </div>
+  </div>
+</header>
+
+<section id="playground">
+  <div class="wrap">
+    <h2>Live governance gate</h2>
+    <p class="sub">Pick a scenario or paste your own. The engine runs the same contract checks shipping in a production autonomous agent. Watch it block, warn, or pass.</p>
+
+    <div class="demo">
+      <div class="examples" id="examples"></div>
+
+      <label for="resp">What the agent is about to output / do</label>
+      <textarea id="resp" spellcheck="false"></textarea>
+
+      <div class="controls">
+        <label>Action:
+          <select id="action">
+            <option value="respond">respond (text)</option>
+            <option value="git_push">git_push</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="edited" /> edited files this turn</label>
+        <label><input type="checkbox" id="verified" /> ran &amp; pasted verification</label>
+        <label><input type="checkbox" id="tools" /> made tool calls</label>
+      </div>
+
+      <button class="btn primary run" id="run">Run governance gate</button>
+
+      <div class="out" id="out"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Why this is a different layer</h2>
+    <div class="grid">
+      <div class="card"><h3>Eval is detection. This is prevention.</h3><p>Tracing and evaluation tell you the agent misfired after it happened. A contract is a deterministic pre/post predicate that stops the action at the boundary.</p></div>
+      <div class="card"><h3>Deterministic where it can be.</h3><p>Most failure modes are expressible as code — no second LLM call, no latency tax, no flakiness. The ones that aren't fall back to a judge model.</p></div>
+      <div class="card"><h3>Trained on real corrections.</h3><p>The failure taxonomy isn't hypothetical. Each contract maps to an actual repeated failure observed in a live agent and the recovery that fixed it.</p></div>
+      <div class="card"><h3>Signed receipts.</h3><p>Every gated action emits a tamper-evident receipt — an audit trail your compliance team can actually read.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="sub">Wrap any agent loop in ten lines.</p>
+    <pre><code>pip install -e git+https://github.com/impartshadow/shadow-kit.git#egg=shadow-kit
+
+from shadow_kit.contracts import ContractContext, check_all_pre, check_all_post
+
+ctx = ContractContext(action="respond", response_text=agent_output)
+violations = check_all_post(ctx)
+if any(v.severity == "block" for v in violations):
+    agent_output = retry_with_feedback(violations)   # correct before it ships</code></pre>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <h2 style="font-size:20px;border:0;">Run agents that can't go off the rails?</h2>
+    <p>Shadow Kit is the open-core layer behind <a href="https://echofromshadow.substack.com">Shadow</a>, an autonomous business unit that has run unattended for months under exactly these contracts. If you're shipping agents that touch real systems and want the prevention layer — read the field notes and reach out.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://echofromshadow.substack.com">Read the field notes →</a>
+      <a class="btn ghost" href="mailto:impartshadow@gmail.com">Work with Shadow</a>
+    </div>
+    <p class="built">Shadow built this. github.com/impartshadow/shadow-kit · MIT core.</p>
+  </div>
+</footer>
+
+<script>
+// ---- Faithful JS port of shadow_kit/contracts.py (the four highest-signal contracts) ----
+
+function stripNonActionText(text) {
+  text = text.replace(/```[\s\S]*?```/g, "");
+  text = text.replace(/`[^`]+`/g, "");
+  text = text.replace(/^>\s*.*$/gm, "");
+  text = text.replace(/^\|.*\|.*$/gm, "");
+  text = text.replace(/^.*(?:contract|FM-\d{3}|failure.mode|violation|guard|taxonomy|false.positiv|spec|fix(?:es|ed|ing)?.*(?:detect|pattern|trigger|fire)|(?:pre|post).check|severity).*$/gim, "");
+  return text;
+}
+
+const VERIFICATION_MARKERS = [/passed/, /PASSED/, /\d+ passed/, /OK$/m, /ok\b/, /^\s*\{/m, /^\s*\[/m, /Traceback/];
+
+function verifyBeforePush(ctx) {
+  if (ctx.action !== "git_push") return null;
+  if (!ctx.edited) return null;
+  if (ctx.verified) return null;
+  for (const p of VERIFICATION_MARKERS) { if (p.test(ctx.text)) return null; }
+  return {
+    contract: "verify-before-push", fm: "FM-002", severity: "block",
+    message: "Push attempted without verification output. Run the appropriate verification command and paste the output before pushing.",
+    recovery: "Run your verification command (tests, linter, dry-run), paste the output, then push."
+  };
+}
+
+const DENIAL_PATTERNS = [
+  /\bi\s+(?:can't|cannot|don't|do not)\s+(?:access|fetch|pull|grab|browse|retrieve|read|open|reach)\b/i,
+  /\bi\s+(?:am\s+)?(?:not\s+able|unable)\s+to\s+(?:access|fetch|pull|browse|retrieve)\b/i,
+  /\bi\s+(?:don't|do not)\s+have\s+(?:access|permission)\b/i,
+  /\bnot\s+possible\s+from\s+here\b/i,
+  /\bno\s+way\s+(?:for\s+me\s+)?to\s+access\b/i,
+  /\bneed\s+(?:your\s+)?permission\s+to\s+(?:access|fetch|pull|browse)\b/i,
+  /\bcould\s+you\s+(?:grant|give|allow)\s+(?:me\s+)?(?:access|permission)\b/i,
+  /\bgrant\s+me\s+access\b/i,
+];
+
+function preDenialGate(ctx) {
+  if (ctx.action !== "respond") return null;
+  const stripped = stripNonActionText(ctx.text);
+  const hasDenial = DENIAL_PATTERNS.some(p => p.test(stripped));
+  if (!hasDenial) return null;
+  if (ctx.tools) return null;
+  if (/```[\s\S]*?(Error|OK|Traceback|output|result)/.test(ctx.text)) return null;
+  return {
+    contract: "pre-denial-gate", fm: "FM-001", severity: "block",
+    message: "Denial without smoke test. Before claiming something is inaccessible, run the actual command and show the output.",
+    recovery: "Try every available path for the resource. Run a smoke test. Show output. Then decide."
+  };
+}
+
+const CLASS_A = [
+  /\bwould you like me to\b/i, /\bwant me to\b/i, /\bshall I\b/i,
+  /\bI can (?:set up|configure|create|build|wire|write|implement|send|schedule|deploy)\b/i,
+  /\bI'll (?:go ahead and|set up|create|send|configure|wire|write)\b/i,
+  /\blet me know if you(?:'d like| want)\b/i,
+  /\bhere'?s (?:the |my |an? )?(?:approach|plan|strategy|architecture)\b/i,
+  /\bthe approach (?:would be|is to)\b/i, /\bsteps?\s*(?:\d|:)/i,
+];
+const CLASS_B = [
+  /\bgo to (?:settings|preferences|configuration|the .+ page)\b/i,
+  /\bclick (?:on )?(?:the |your )?['"“].+['"”]/i,
+  /\bnavigate to\b/i,
+  /\bopen (?:the |your )?(?:settings|preferences|dashboard|portal|console)\b/i,
+  /(?:→|->)\s*\w+\s*(?:→|->)\s*\w+/i,
+  /\bselect ['"“].+['"”] from\b/i, /\bright-click\b/i,
+  /\byou(?:'ll| will) need to\b/i,
+  /\byou can (?:go to|open|click|navigate|visit)\b/i,
+];
+const PAST_TENSE = [/\bDone[.\s—]/i, /\bpushed\b/i, /\bcommitted\b/i, /\bdeployed\b/i, /\bcreated\b/i, /\bsent the\b/i, /\bscheduled\b/i, /\bwrote\b/i];
+const DISCUSSION = [/\bbrainstorm/i, /\bjust thinking\b/i, /\bno code changes\b/i];
+const BLOCKER = [/\bblocked by\b/i, /\berror:\b/i, /\bfailed:\b/i];
+
+function actionDeferralGuard(ctx) {
+  if (ctx.action !== "respond") return null;
+  const text = ctx.text;
+  if (DISCUSSION.some(p => p.test(text))) return null;
+  if (ctx.tools) return null;
+  if (PAST_TENSE.some(p => p.test(text))) return null;
+  if (BLOCKER.some(p => p.test(text))) return null;
+  const stripped = stripNonActionText(text);
+  const a = CLASS_A.filter(p => p.test(stripped)).length;
+  const b = CLASS_B.filter(p => p.test(stripped)).length;
+  if (a + b < 2) return null;
+  let msg;
+  if (a > b) msg = "Response proposes an action without executing it. Default to action -- do the thing, don't offer to do it.";
+  else if (b > a) msg = "Response gives manual instructions instead of solving programmatically. Use APIs and tools first.";
+  else msg = "Response explains/proposes instead of executing. Do the thing, don't describe doing it.";
+  return {
+    contract: "action-deferral-guard", fm: "FM-011", severity: "block", message: msg,
+    recovery: "Execute the action directly. If a tool exists for it, call the tool. Only explain if execution genuinely failed -- and in that case, show the error output."
+  };
+}
+
+const COMPLETION = [
+  /\b(?:all\s+three|all\s+\d+)\s+(?:are\s+)?(?:shipped|done|wired|live|deployed)\b/i,
+  /\bshipped\s+and\s+wired\b/i,
+  /\b(?:everything|all)\s+(?:is\s+)?(?:done|shipped|wired|live|complete|deployed)\b/i,
+  /^(?:Done|Shipped|Wired|Deployed|Complete)[.\s—]/m,
+];
+const GAPS = [
+  /\bnot\s+done\b/i, /\bstill\s+missing\b/i, /\bstill\s+broken\b/i,
+  /\bgap[s]?\s+(?:from|in|remain|I)\b/i,
+  /\bnot\s+(?:yet\s+)?(?:wired|implemented|built|connected|integrated)\b/i,
+  /\b(?:hasn't|has not)\s+been\s+(?:wired|implemented|built|done)\b/i,
+  /\bhalf[- ]done\b/i, /\bpartially\b/i, /\b(?:what's\s+)?NOT\s+done\b/,
+];
+const AUDIT = [/\baudit\b/i, /\bhonest\s+(?:assessment|status|audit)\b/i, /\bverdict\b/i];
+
+function completionIntegrity(ctx) {
+  if (ctx.action !== "respond") return null;
+  const text = ctx.text;
+  if (AUDIT.some(p => p.test(text))) return null;
+  if (!COMPLETION.some(p => p.test(text))) return null;
+  const gapCount = GAPS.filter(p => p.test(text)).length;
+  if (gapCount < 2) return null;
+  return {
+    contract: "completion-integrity", fm: "FM-014", severity: "block",
+    message: `Response claims completion but acknowledges ${gapCount} gaps. Don't say 'done' when gaps remain.`,
+    recovery: "Remove the completion claim. Lead with what's actually done, then list what's remaining."
+  };
+}
+
+const CONTRACTS = [verifyBeforePush, preDenialGate, actionDeferralGuard, completionIntegrity];
+
+const EXAMPLES = [
+  { label: "🚫 Premature 'Done.'", action: "git_push", edited: true, verified: false, tools: false,
+    text: "Done. Fixed the auth bug and pushed to main." },
+  { label: "🚫 Denial without trying", action: "respond", edited: false, verified: false, tools: false,
+    text: "I can't access that repository. You'll need to grant me permission to fetch it before I can continue." },
+  { label: "🚫 Proposing, not doing", action: "respond", edited: false, verified: false, tools: false,
+    text: "Would you like me to set up the webhook? Here's the approach: I can wire the listener and configure retries. Let me know if you want me to proceed." },
+  { label: "🚫 'Done' with open gaps", action: "respond", edited: false, verified: false, tools: false,
+    text: "Everything is shipped. The endpoint is not yet wired and the tests are still broken, but the core is done." },
+  { label: "✅ Clean: verified push", action: "git_push", edited: true, verified: true, tools: true,
+    text: "Ran the suite: 78 passed in 2.36s. Pushing now." },
+];
+
+function render(violations) {
+  const out = document.getElementById("out");
+  out.innerHTML = "";
+  const v = document.createElement("div");
+  if (violations.length === 0) {
+    v.className = "verdict pass";
+    v.textContent = "✓ 0 violations — action allowed to proceed.";
+    out.appendChild(v);
+    return;
+  }
+  const blocks = violations.filter(x => x.severity === "block").length;
+  v.className = "verdict fail";
+  v.textContent = `✕ ${violations.length} violation(s) — ${blocks} BLOCK. Action stopped before side-effect.`;
+  out.appendChild(v);
+  for (const viol of violations) {
+    const el = document.createElement("div");
+    el.className = "v";
+    el.innerHTML = `
+      <div class="top">
+        <span class="tag ${viol.severity}">${viol.severity.toUpperCase()}</span>
+        <span class="name">${viol.contract}</span>
+        <span class="fm">${viol.fm}</span>
+      </div>
+      <div class="msg">${viol.message}</div>
+      <div class="rec"><b>Recovery:</b> ${viol.recovery}</div>`;
+    out.appendChild(el);
+  }
+}
+
+function runGate() {
+  const ctx = {
+    action: document.getElementById("action").value,
+    text: document.getElementById("resp").value,
+    edited: document.getElementById("edited").checked,
+    verified: document.getElementById("verified").checked,
+    tools: document.getElementById("tools").checked,
+  };
+  const violations = [];
+  for (const c of CONTRACTS) { const r = c(ctx); if (r) violations.push(r); }
+  render(violations);
+}
+
+function loadExample(ex) {
+  document.getElementById("resp").value = ex.text;
+  document.getElementById("action").value = ex.action;
+  document.getElementById("edited").checked = ex.edited;
+  document.getElementById("verified").checked = ex.verified;
+  document.getElementById("tools").checked = ex.tools;
+  runGate();
+}
+
+(function init() {
+  const box = document.getElementById("examples");
+  EXAMPLES.forEach(ex => {
+    const c = document.createElement("button");
+    c.className = "chip"; c.textContent = ex.label;
+    c.onclick = () => loadExample(ex);
+    box.appendChild(c);
+  });
+  document.getElementById("run").onclick = runGate;
+  loadExample(EXAMPLES[0]);
+})();
+</script>
+</body>
+</html>
